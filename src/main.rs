@@ -38,7 +38,7 @@ fn main() {
                 if KEYWORDS.contains(args[1]) {
                     println!("{} is a shell builtin", args[1])
                 } else {
-                    println!("{command}: not found");
+                    println!("{}: not found", args[1]);
                 }
             }
             _ => {
