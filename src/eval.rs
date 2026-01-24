@@ -40,6 +40,7 @@ pub fn run() {
                         let directories = env::split_paths(&path);
                         for directory in directories {
                             let path = directory.join(args[1]);
+                            println!("Test Path:{}", path.display());
                             if path.exists() {
                                 #[cfg(unix)]
                                 {
@@ -47,6 +48,7 @@ pub fn run() {
                                     let mode = metadata.permissions().mode();
                                     if mode & 0o111 != 0 {
                                         println!("{} is {}", args[1], &path.display());
+                                        break;
                                     }
                                 }
                                 #[cfg(not(unix))]
