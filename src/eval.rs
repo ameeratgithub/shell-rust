@@ -35,7 +35,13 @@ pub fn run() {
                 if KEYWORDS.contains(args[1]) {
                     println!("{} is a shell builtin", args[1])
                 } else {
-                    check_executable_file_exists_in_paths(args[1]);
+                    let file_name = args[1];
+                    
+                    if let Some(path) = check_executable_file_exists_in_paths(file_name) {
+                        println!("{} is {}", file_name, path);
+                    } else {
+                        println!("{}: not found", file_name);
+                    }
                 }
             }
             _ => {
@@ -59,14 +65,10 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
                 let metadata = fs::metadata(&path).unwrap();
                 let mode = metadata.permissions().mode();
                 if mode & 0o111 != 0 {
-                    println!("{} is {}", file, &path.display());
                     return path.to_str().map(|str| str.to_owned());
                 }
             }
         }
-        println!("{}: not found", file);
-    } else {
-        println!("{}: not found", file);
     }
 
     None
