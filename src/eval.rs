@@ -28,7 +28,7 @@ pub fn run() {
 
         match command {
             "echo" => {
-                let first_arg = args[1].as_str();
+                let first_arg = args[1..].join(" ");
                 println!("{first_arg}");
             }
             "exit" => {
