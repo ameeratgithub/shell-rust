@@ -39,6 +39,13 @@ pub fn run() {
                 }
             }
             "cd" => {
+                if args[1] == "~"
+                    && let Ok(home_path) = env::var("HOME")
+                {
+                    env::set_current_dir(home_path).unwrap();
+                    continue;
+                }
+
                 let Ok(path) = PathBuf::from_str(&args[1]);
                 if path.is_dir() {
                     env::set_current_dir(path).unwrap();
