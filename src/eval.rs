@@ -28,8 +28,14 @@ pub fn run() {
 
         match command {
             "echo" => {
-                let first_arg = args[1..].join(" ");
-                println!("{first_arg}");
+                let output = args
+                    .iter()
+                    .skip(1)
+                    .filter(|s| !s.trim().is_empty()) // Keep only "real" strings
+                    .map(|s| s.as_str()) // Convert &String to &str for joining
+                    .collect::<Vec<_>>() // Collect into a temporary Vec
+                    .join(" ");
+                println!("{output}");
             }
             "exit" => {
                 break;
@@ -114,7 +120,8 @@ fn parse_command(command: &mut Peekable<Chars>) -> String {
         }
         str.push(c);
     }
-    str
+
+    str.trim().to_owned()
 }
 
 fn parse_string(arg: &mut Peekable<Chars>) -> Option<String> {
