@@ -1,6 +1,7 @@
 use std::{
     env, fs,
     io::{self, Write},
+    path,
     process::{self, Command},
 };
 
@@ -31,12 +32,17 @@ pub fn run() {
             "exit" => {
                 break;
             }
+            "pwd" => {
+                if let Ok(curr_dir) = env::current_dir() {
+                    println!("{}", curr_dir.display());
+                }
+            }
             "type" => {
                 if KEYWORDS.contains(args[1]) {
                     println!("{} is a shell builtin", args[1])
                 } else {
                     let file_name = args[1];
-                    
+
                     if let Some(path) = check_executable_file_exists_in_paths(file_name) {
                         println!("{} is {}", file_name, path);
                     } else {
