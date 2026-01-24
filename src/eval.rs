@@ -1,8 +1,9 @@
 use std::{
     env, fs,
     io::{self, Write},
-    path,
+    path::{self, Path, PathBuf},
     process::{self, Command},
+    str::FromStr,
 };
 
 use crate::keywords::KEYWORDS;
@@ -35,6 +36,14 @@ pub fn run() {
             "pwd" => {
                 if let Ok(curr_dir) = env::current_dir() {
                     println!("{}", curr_dir.display());
+                }
+            }
+            "cd" => {
+                let Ok(path) = PathBuf::from_str(&args[1]);
+                if path.is_dir() {
+                    env::set_current_dir(path).unwrap();
+                } else {
+                    println!("cd: {}: No such file or directory", path.display())
                 }
             }
             "type" => {
