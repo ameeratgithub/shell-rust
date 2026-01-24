@@ -5,7 +5,6 @@ use std::{
 };
 
 use crate::keywords::KEYWORDS;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 pub fn run() {
@@ -52,23 +51,21 @@ pub fn run() {
 
 fn check_executable_file_exists_in_paths(paths: &String, args: &Vec<&str>) {
     let directories = env::split_paths(paths);
+    let mut found = false;
     for directory in directories {
         let path = directory.join(args[1]);
         if path.exists() {
-            #[cfg(unix)]
-            {
-                let metadata = fs::metadata(&path).unwrap();
-                let mode = metadata.permissions().mode();
-                if mode & 0o111 != 0 {
-                    println!("{} is {}", args[1], &path.display());
-                    break;
-                }
-            }
-            #[cfg(not(unix))]
-            {
-                // On Windows, just check if file exists (simplified)
+            let metadata = fs::metadata(&path).unwrap();
+            let mode = metadata.permissions().mode();
+            if mode & 0o111 != 0 {
                 println!("{} is {}", args[1], &path.display());
+                found = true;
+                break;
             }
         }
+    }
+
+    if !found {
+        println!("{}: not found", args[1]);
     }
 }
