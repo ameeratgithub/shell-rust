@@ -1,5 +1,14 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::{collections::HashSet, sync::LazyLock};
+
+static KEYWORDS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("echo");
+    set.insert("exit");
+    set.insert("type");
+    set
+});
 
 fn main() {
     loop {
@@ -16,11 +25,25 @@ fn main() {
 
         let args = command.split_whitespace().collect::<Vec<&str>>();
         let command = args[0];
-        if command == "echo" {
-            let output = &args[1..].join(" ");
-            println!("{output}");
-        } else {
-            println!("{command}: command not found");
+
+        match command {
+            "echo" => {
+                let output = &args[1..].join(" ");
+                println!("{output}");
+            }
+            "exit" => {
+                break;
+            }
+            "type" => {
+                if KEYWORDS.contains(args[1]) {
+                    println!("{} is a shell builtin", args[1])
+                } else {
+                    println!("{command}: not found");
+                }
+            }
+            _ => {
+                println!("{command}: command not found");
+            }
         }
     }
 }
