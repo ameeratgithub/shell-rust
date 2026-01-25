@@ -104,8 +104,9 @@ fn parse_args(chars: &mut Peekable<Chars>) -> String {
     while let Some(c) = chars.peek() {
         if c.is_whitespace() {
             break;
-        } else if *c == '\'' {
-            str.push_str(&parse_strings(chars));
+        } else if *c == '\'' || *c == '"' {
+            let c = c.clone();
+            str.push_str(&parse_strings(chars, c));
         } else {
             str.push_str(&parse_command(chars));
         }
@@ -120,8 +121,9 @@ fn parse_command(command: &mut Peekable<Chars>) -> String {
             break;
         }
 
-        if *c == '\'' {
-            str.push_str(&parse_strings(command));
+        if *c == '\'' || *c == '"' {
+            let c = c.to_owned();
+            str.push_str(&parse_strings(command, c));
         }
 
         if let Some(c) = command.next() {
@@ -132,12 +134,12 @@ fn parse_command(command: &mut Peekable<Chars>) -> String {
     str.trim().to_owned()
 }
 
-fn parse_strings(arg: &mut Peekable<Chars>) -> String {
+fn parse_strings(arg: &mut Peekable<Chars>, quote_char: char) -> String {
     let mut str = String::new();
 
     while let Some(c) = arg.peek() {
-        if *c == '\'' {
-            str.push_str(&parse_string(arg));
+        if *c == quote_char {
+            str.push_str(&parse_string(arg, quote_char));
         } else if c.is_whitespace() {
             break;
         } else {
@@ -148,13 +150,13 @@ fn parse_strings(arg: &mut Peekable<Chars>) -> String {
     str
 }
 
-fn parse_string(arg: &mut Peekable<Chars>) -> String {
+fn parse_string(arg: &mut Peekable<Chars>, quote_char: char) -> String {
     // Advancing because first "'" has already been checked
     arg.next();
 
     let mut str = String::new();
     while let Some(c) = arg.next() {
-        if c == '\'' {
+        if c == quote_char {
             return str;
         }
         str.push(c);
