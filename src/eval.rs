@@ -102,7 +102,12 @@ fn parse_command_with_args(command: &str) -> Vec<String> {
 fn parse_args(chars: &mut Peekable<Chars>) -> String {
     let mut str = String::new();
     while let Some(c) = chars.peek() {
-        if c.is_whitespace() {
+        if *c == '\\' {
+            chars.next();
+            if let Some(c2) = chars.next() {
+                str.push(c2);
+            }
+        } else if c.is_whitespace() {
             break;
         } else if *c == '\'' || *c == '"' {
             let c = c.clone();
@@ -117,7 +122,7 @@ fn parse_args(chars: &mut Peekable<Chars>) -> String {
 fn parse_command(command: &mut Peekable<Chars>) -> String {
     let mut str = String::new();
     while let Some(c) = command.peek() {
-        if c.is_whitespace() {
+        if c.is_whitespace() || *c == '\\' {
             break;
         }
 
