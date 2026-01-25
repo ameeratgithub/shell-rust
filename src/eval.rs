@@ -23,7 +23,7 @@ pub fn run() {
             break;
         }
 
-        let args = parse_command_with_args(command);
+        let mut args = parse_command_with_args(command);
         let command = args[0].as_str();
 
         match command {
@@ -31,10 +31,11 @@ pub fn run() {
                 let output = args
                     .iter()
                     .skip(1)
-                    .filter(|s| !s.trim().is_empty()) // Keep only "real" strings
-                    .map(|s| s.as_str()) // Convert &String to &str for joining
-                    .collect::<Vec<_>>() // Collect into a temporary Vec
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
                     .join(" ");
+
                 println!("{output}");
             }
             "exit" => {
@@ -76,21 +77,7 @@ pub fn run() {
                 let command = args[0].as_str();
                 let executable_path = check_executable_file_exists_in_paths(command);
                 if let Some(_) = executable_path {
-                    let mut parsed_args: Vec<String> = args[1..]
-                        .iter()
-                        .map(|arg| {
-                            if arg.chars().nth(0) == Some('\'') {
-                                parse_string(&mut arg.chars().peekable()).unwrap()
-                            } else {
-                                arg.to_string()
-                            }
-                        })
-                        .collect();
-
-                    Command::new(command)
-                        .args(&mut parsed_args)
-                        .status()
-                        .unwrap();
+                    Command::new(command).args(&mut args[1..]).status().unwrap();
                 } else {
                     println!("{command}: command not found");
                 }
@@ -103,40 +90,77 @@ fn parse_command_with_args(command: &str) -> Vec<String> {
     let mut args = vec![];
     let chars = &mut command.chars().peekable();
     while let Some(c) = chars.peek() {
-        if *c == '\'' {
-            args.push(parse_string(chars).unwrap());
+        if c.is_whitespace() {
+            chars.next();
         } else {
-            args.push(parse_command(chars));
+            args.push(parse_args(chars));
         }
     }
     args
 }
 
+fn parse_args(chars: &mut Peekable<Chars>) -> String {
+    let mut str = String::new();
+    while let Some(c) = chars.peek() {
+        if c.is_whitespace() {
+            break;
+        } else if *c == '\'' {
+            str.push_str(&parse_strings(chars));
+        } else {
+            str.push_str(&parse_command(chars));
+        }
+    }
+    str
+}
+
 fn parse_command(command: &mut Peekable<Chars>) -> String {
     let mut str = String::new();
-    while let Some(c) = command.next() {
+    while let Some(c) = command.peek() {
         if c.is_whitespace() {
             break;
         }
-        str.push(c);
+
+        if *c == '\'' {
+            str.push_str(&parse_strings(command));
+        }
+
+        if let Some(c) = command.next() {
+            str.push(c);
+        }
     }
 
     str.trim().to_owned()
 }
 
-fn parse_string(arg: &mut Peekable<Chars>) -> Option<String> {
+fn parse_strings(arg: &mut Peekable<Chars>) -> String {
+    let mut str = String::new();
+
+    while let Some(c) = arg.peek() {
+        if *c == '\'' {
+            str.push_str(&parse_string(arg));
+        } else if c.is_whitespace() {
+            break;
+        } else {
+            str.push_str(&parse_command(arg));
+        }
+    }
+
+    str
+}
+
+fn parse_string(arg: &mut Peekable<Chars>) -> String {
     // Advancing because first "'" has already been checked
     arg.next();
 
     let mut str = String::new();
     while let Some(c) = arg.next() {
         if c == '\'' {
-            return Some(str);
+            return str;
         }
         str.push(c);
     }
 
-    None
+    str
 }
 
 fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
