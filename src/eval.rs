@@ -28,7 +28,6 @@ pub fn run() {
 
         match command {
             "echo" => {
-                println!("args:{args:?}");
                 let output = args
                     .iter()
                     .skip(1)
@@ -146,7 +145,6 @@ fn parse_strings(arg: &mut Peekable<Chars>, quote_char: char) -> String {
     let mut str = String::new();
 
     while let Some(c) = arg.peek() {
-        println!("parse_strings::c:{c}");
         if *c == quote_char {
             str.push_str(&parse_string(arg, quote_char));
         } else if c.is_whitespace() {
@@ -165,7 +163,6 @@ fn parse_string(arg: &mut Peekable<Chars>, quote_char: char) -> String {
 
     let mut str = String::new();
     while let Some(c) = arg.next() {
-        println!("parse_string::c:{c}");
         if quote_char == '"' && c == '\\' {
             if let Some(c) = arg.next() {
                 str.push(c);
