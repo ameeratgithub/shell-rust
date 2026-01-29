@@ -28,6 +28,7 @@ pub fn run() {
 
         match command {
             "echo" => {
+                println!("args:{args:?}");
                 let output = args
                     .iter()
                     .skip(1)
@@ -124,15 +125,11 @@ fn parse_command(command: &mut Peekable<Chars>) -> String {
     while let Some(c) = command.peek() {
         if c.is_whitespace() || *c == '\\' {
             break;
-        }
-
-        if *c == '\'' || *c == '"' {
+        } else if *c == '\'' || *c == '"' {
             let c = c.to_owned();
             str.push_str(&parse_strings(command, c));
-        }
-
-        if let Some(c) = command.next() {
-            str.push(c);
+        } else {
+            str.push(command.next().unwrap());
         }
     }
 
@@ -156,7 +153,7 @@ fn parse_strings(arg: &mut Peekable<Chars>, quote_char: char) -> String {
 }
 
 fn parse_string(arg: &mut Peekable<Chars>, quote_char: char) -> String {
-    // Advancing because first "'" has already been checked
+    // Advancing because first `quote_char` has already been checked
     arg.next();
 
     let mut str = String::new();
