@@ -28,7 +28,6 @@ pub fn run() {
 
         match command {
             "echo" => {
-                println!("args:{args:?}");
                 let output = args
                     .iter()
                     .skip(1)
