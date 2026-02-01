@@ -166,7 +166,7 @@ fn parse_string(arg: &mut Peekable<Chars>, quote_char: char) -> String {
     while let Some(c) = arg.next() {
         if quote_char == '"' && c == '\\' {
             if let Some(c) = arg.next() {
-                if c != quote_char {
+                if c != quote_char && c != '\\' {
                     str.push('\\');
                 }
                 str.push(c);
