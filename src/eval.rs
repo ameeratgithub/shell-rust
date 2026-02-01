@@ -26,6 +26,8 @@ pub fn run() {
         let mut args = parse_command_with_args(command);
         let command = args[0].as_str();
 
+        // println!("args:{args:?}");
+
         match command {
             "echo" => {
                 let output = args
@@ -74,11 +76,10 @@ pub fn run() {
                 }
             }
             _ => {
-                let command = args[0].as_str();
-                let executable_path = check_executable_file_exists_in_paths(command);
-                if let Some(_) = executable_path {
-                    Command::new(command).args(&mut args[1..]).status().unwrap();
-                } else {
+                // let executable_path = check_executable_file_exists_in_paths(command);
+                let execution_result = Command::new(command).args(&mut args[1..]).status();
+                if let Err(_) = execution_result {
+                    let command = args[0].as_str();
                     println!("{command}: command not found");
                 }
             }
@@ -183,6 +184,7 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
         let directories = env::split_paths(&paths);
         for directory in directories {
             let path = directory.join(file);
+            println!("path:{path:?}");
             if path.exists() {
                 let metadata = fs::metadata(&path).unwrap();
                 let mode = metadata.permissions().mode();
@@ -192,6 +194,5 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
             }
         }
     }
-
     None
 }
