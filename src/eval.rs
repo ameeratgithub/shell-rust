@@ -76,7 +76,14 @@ pub fn run() {
                 }
             }
             _ => {
-                // let executable_path = check_executable_file_exists_in_paths(command);
+                if !command.contains(" ") {
+                    let executable_path = check_executable_file_exists_in_paths(command);
+                    if executable_path.is_none() {
+                        println!("{command}: command not found");
+                        continue;
+                    }
+                }
+
                 let execution_result = Command::new(command).args(&mut args[1..]).status();
                 if let Err(_) = execution_result {
                     let command = args[0].as_str();
