@@ -194,7 +194,6 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
         let directories = env::split_paths(&paths);
         for directory in directories {
             let path = directory.join(file);
-            println!("path:{path:?}");
             if path.exists() {
                 let metadata = fs::metadata(&path).unwrap();
                 let mode = metadata.permissions().mode();
