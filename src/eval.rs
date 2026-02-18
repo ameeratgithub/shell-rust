@@ -71,7 +71,7 @@ pub fn run() {
                     if let Some(path) = check_executable_file_exists_in_paths(first_arg) {
                         println!("{} is {}", first_arg, path);
                     } else {
-                        println!("{}: not found", first_arg);
+                        eprintln!("{}: not found", first_arg);
                     }
                 }
             }
@@ -79,7 +79,7 @@ pub fn run() {
                 if !command.contains(" ") {
                     let executable_path = check_executable_file_exists_in_paths(command);
                     if executable_path.is_none() {
-                        println!("{command}: command not found");
+                        eprintln!("{command}: command not found");
                         continue;
                     }
                 }
@@ -87,7 +87,7 @@ pub fn run() {
                 let execution_result = Command::new(command).args(&mut args[1..]).status();
                 if let Err(_) = execution_result {
                     let command = args[0].as_str();
-                    println!("{command}: command not found");
+                    eprintln!("{command}: command not found");
                 }
             }
         }
