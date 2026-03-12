@@ -1,3 +1,7 @@
+#[cfg(windows)]
+use std::fs::Metadata;
+#[cfg(unix)]
+use std::fs::Metadata;
 use std::{
     env, fs,
     io::{self, Write},
@@ -8,7 +12,6 @@ use std::{
 };
 
 use crate::keywords::KEYWORDS;
-use std::os::unix::fs::PermissionsExt;
 
 pub fn run() {
     loop {
@@ -196,12 +199,24 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
             let path = directory.join(file);
             if path.exists() {
                 let metadata = fs::metadata(&path).unwrap();
-                let mode = metadata.permissions().mode();
-                if mode & 0o111 != 0 {
+
+                if is_executable(&metadata) {
                     return path.to_str().map(|str| str.to_owned());
                 }
             }
         }
     }
     None
+}
+
+#[cfg(unix)]
+fn is_executable(metadata: &Metadata) -> bool {
+    use std::{fs::metadata, os::unix::fs::PermissionExt};
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(windows)]
+fn is_executable(_metadata: &Metadata) -> bool {
+    // windows doesn't use permission bits for executables.
+    true
 }

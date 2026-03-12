@@ -1,4 +1,4 @@
-use crate::lexer::Lexer;
+use crate::lexer::{Lexer, TokenList};
 use std::io::{self, Write};
 
 #[allow(unused_imports)]
@@ -15,18 +15,14 @@ fn main() {
         io::stdin().read_line(&mut command).unwrap();
 
         let command = command.trim();
+
         if command == "exit" {
             break;
         }
-        let lexer = Lexer::new();
-        let tokens = lexer.scan(command);
-        if let Err(e) = tokens {
-            eprintln!("Lexer Error: {e:?}");
-            return;
-        }
 
-        let tokens = tokens.unwrap();
-        
+        let lexer = Lexer::new();
+        let tokens = lexer.scan_until_complete(command);
+        println!("Tokens: {}", TokenList(tokens));
     }
     // eval::run();
 }
