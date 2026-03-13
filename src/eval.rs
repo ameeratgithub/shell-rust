@@ -31,69 +31,11 @@ pub fn run() {
 
         // println!("args:{args:?}");
 
-        match command {
-            "echo" => {
-                let output = args
-                    .iter()
-                    .skip(1)
-                    .filter(|s| !s.trim().is_empty())
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-
-                println!("{output}");
-            }
-            "exit" => {
-                break;
-            }
-            "pwd" => {
-                if let Ok(curr_dir) = env::current_dir() {
-                    println!("{}", curr_dir.display());
-                }
-            }
-            "cd" => {
-                if args[1] == "~"
-                    && let Ok(home_path) = env::var("HOME")
-                {
-                    env::set_current_dir(home_path).unwrap();
-                    continue;
-                }
-
-                let Ok(path) = PathBuf::from_str(&args[1]);
-                if path.is_dir() {
-                    env::set_current_dir(path).unwrap();
-                } else {
-                    println!("cd: {}: No such file or directory", path.display())
-                }
-            }
-            "type" => {
-                let first_arg = args[1].as_str();
-                if KEYWORDS.contains(first_arg) {
-                    println!("{} is a shell builtin", first_arg)
-                } else {
-                    if let Some(path) = check_executable_file_exists_in_paths(first_arg) {
-                        println!("{} is {}", first_arg, path);
-                    } else {
-                        eprintln!("{}: not found", first_arg);
-                    }
-                }
-            }
-            _ => {
-                if !command.contains(" ") {
-                    let executable_path = check_executable_file_exists_in_paths(command);
-                    if executable_path.is_none() {
-                        eprintln!("{command}: command not found");
-                        continue;
-                    }
-                }
-
-                let execution_result = Command::new(command).args(&mut args[1..]).status();
-                if let Err(_) = execution_result {
-                    let command = args[0].as_str();
-                    eprintln!("{command}: command not found");
-                }
-            }
-        }
+        // match command {
+            
+            
+           
+        // }
     }
 }
 
@@ -192,31 +134,3 @@ fn parse_string(arg: &mut Peekable<Chars>, quote_char: char) -> String {
     str
 }
 
-fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
-    if let Ok(paths) = env::var("PATH") {
-        let directories = env::split_paths(&paths);
-        for directory in directories {
-            let path = directory.join(file);
-            if path.exists() {
-                let metadata = fs::metadata(&path).unwrap();
-
-                if is_executable(&metadata) {
-                    return path.to_str().map(|str| str.to_owned());
-                }
-            }
-        }
-    }
-    None
-}
-
-#[cfg(unix)]
-fn is_executable(metadata: &Metadata) -> bool {
-    use std::{fs::metadata, os::unix::fs::PermissionExt};
-    metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(windows)]
-fn is_executable(_metadata: &Metadata) -> bool {
-    // windows doesn't use permission bits for executables.
-    true
-}

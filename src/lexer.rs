@@ -11,21 +11,21 @@ pub enum LexerError {
     Other(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum WordPart {
     Unquoted(String),
     SingleQuoted(String),
     DoubleQuoted(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TokenType {
     Word(Vec<WordPart>),
 }
 
 #[derive(Debug)]
 pub struct Token {
-    ty: TokenType,
+    pub ty: TokenType,
 }
 
 impl Token {
