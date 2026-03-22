@@ -1,10 +1,18 @@
 #[cfg(unix)]
 use std::fs::Metadata;
-use std::{env, fs, path::PathBuf, process::Command as ProcessCommand, str::FromStr};
+use std::{
+    env,
+    fs::{self, File, OpenOptions},
+    io::Write,
+    path::PathBuf,
+    process::{Command as ProcessCommand, Stdio},
+    str::FromStr,
+};
 
 use crate::{
     keywords::KEYWORDS,
-    parser::{AstNode, Command},
+    lexer::RedirectionOperator,
+    parser::{AstNode, Command, Redirection},
 };
 
 pub enum VMError {
@@ -19,7 +27,7 @@ impl VM {
                 VM::execute_command(command)?;
             }
 
-            AstNode::Pipeline { left, right } => {
+            AstNode::BinaryOp { op: _, left, right } => {
                 VM::execute(*left)?;
                 VM::execute(*right)?;
             }
@@ -31,77 +39,133 @@ impl VM {
     fn execute_command(command: Command) -> Result<(), VMError> {
         let program = command.program.as_str();
         let mut args = command.args;
-        match program {
-            "echo" => VM::execute_echo(args),
-            "exit" => return Err(VMError::Exit),
-            "pwd" => VM::print_working_directory(),
-            "cd" => VM::change_directory(args),
-            "type" => VM::check_type_of_command(args),
-            _ => VM::execute_program(program, &mut args),
+
+        if KEYWORDS.contains(program) {
+            let output_result = match program {
+                "echo" => VM::execute_echo(args),
+                "exit" => return Err(VMError::Exit),
+                "pwd" => VM::print_working_directory(),
+                "cd" => VM::change_directory(args),
+                "type" => VM::check_type_of_command(args),
+                _ => unreachable!(),
+            };
+
+            match output_result {
+                Ok(output_string) => {
+                    if !output_string.is_empty() {
+                        if let Some(mut file) = VM::get_file_for_redirection(&command.redirections)
+                        {
+                            let _ = writeln!(file, "{}", output_string);
+                        } else {
+                            println!("{output_string}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    if !e.is_empty() {
+                        eprintln!("{e}");
+                    }
+                }
+            }
+
+            return Ok(());
+        }
+
+        let stdio = VM::get_file_for_redirection(&command.redirections)
+            .map(Stdio::from)
+            .unwrap_or_else(Stdio::inherit);
+
+        let external_result = VM::execute_program(program, &mut args, stdio);
+        if let Err(e) = external_result {
+            eprintln!("{}", e);
         }
 
         Ok(())
     }
 
-    fn execute_echo(args: Vec<String>) {
+    fn get_file_for_redirection(redirections: &Vec<Redirection>) -> Option<File> {
+        if redirections.is_empty() {
+            return None;
+        }
+
+        let redirection = redirections.first().unwrap();
+
+        if redirection.op == RedirectionOperator::Overwrite {
+            File::create(&redirection.file).ok()
+        } else {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&redirection.file)
+                .ok()
+        }
+    }
+
+    fn execute_echo(args: Vec<String>) -> Result<String, String> {
         let output = args
             .iter()
-            .skip(1)
             .filter(|s| !s.trim().is_empty())
             .map(|s| s.as_str())
             .collect::<Vec<_>>()
             .join(" ");
 
-        println!("{output}");
+        Ok(format!("{output}"))
     }
 
-    fn print_working_directory() {
-        if let Ok(curr_dir) = env::current_dir() {
-            println!("{}", curr_dir.display());
+    fn print_working_directory() -> Result<String, String> {
+        match env::current_dir() {
+            Ok(curr_dir) => Ok(format!("{}", curr_dir.display())),
+            Err(e) => Err(e.to_string()),
         }
     }
 
-    fn check_type_of_command(args: Vec<String>) {
+    fn check_type_of_command(args: Vec<String>) -> Result<String, String> {
         let first_arg = args[0].as_str();
         if KEYWORDS.contains(first_arg) {
-            println!("{} is a shell builtin", first_arg)
+            Ok(format!("{} is a shell builtin", first_arg))
         } else {
             if let Some(path) = check_executable_file_exists_in_paths(first_arg) {
-                println!("{} is {}", first_arg, path);
+                Ok(format!("{} is {}", first_arg, path))
             } else {
-                eprintln!("{}: not found", first_arg);
+                Err(format!("{}: not found", first_arg))
             }
         }
     }
-    fn change_directory(args: Vec<String>) {
+
+    fn change_directory(args: Vec<String>) -> Result<String, String> {
         if (args.first().is_none() || args[0] == "~")
             && let Ok(home_path) = env::var("HOME")
         {
             env::set_current_dir(home_path).unwrap();
-            return;
+            return Ok(String::new());
         }
 
         let Ok(path) = PathBuf::from_str(&args[0]);
         if path.is_dir() {
             env::set_current_dir(path).unwrap();
+            Ok(String::new())
         } else {
-            println!("cd: {}: No such file or directory", path.display())
+            Ok(format!("cd: {}: No such file or directory", path.display()))
         }
     }
 
-    fn execute_program(program: &str, args: &mut Vec<String>) {
+    fn execute_program(
+        program: &str,
+        args: &mut Vec<String>,
+        stdio: Stdio,
+    ) -> Result<String, String> {
         if !program.contains(" ") {
-            let executable_path = check_executable_file_exists_in_paths(program);
-            if executable_path.is_none() {
-                eprintln!("{program}: command not found");
-                return;
-            }
+            check_executable_file_exists_in_paths(program)
+                .ok_or_else(|| format!("{program}: command not found"))?;
         }
 
-        let execution_result = ProcessCommand::new(program).args(&mut args[0..]).status();
-        if let Err(_) = execution_result {
-            eprintln!("{program}: command not found");
-        }
+        ProcessCommand::new(program)
+            .args(&mut args[0..])
+            .stdout(stdio)
+            .status()
+            .map_err(|_| format!("{program}: command not found"))?;
+
+        Ok(String::new())
     }
 }
 

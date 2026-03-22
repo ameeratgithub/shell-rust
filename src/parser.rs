@@ -1,21 +1,33 @@
-use crate::lexer::{Token, TokenType};
+use crate::lexer::{ControlOperator, RedirectionOperator, Token, TokenType};
+
+#[derive(Debug)]
+pub struct Redirection {
+    pub op: RedirectionOperator,
+    pub file: String,
+}
 
 #[derive(Debug)]
 pub struct Command {
     pub program: String,
     pub args: Vec<String>,
+    pub redirections: Vec<Redirection>,
 }
 
 impl Command {
-    pub fn new(program: String, args: Vec<String>) -> Self {
-        Self { program, args }
+    pub fn new(program: String, args: Vec<String>, redirections: Vec<Redirection>) -> Self {
+        Self {
+            program,
+            args,
+            redirections,
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum AstNode {
     SimpleCommand(Command),
-    Pipeline {
+    BinaryOp {
+        op: ControlOperator,
         left: Box<AstNode>,
         right: Box<AstNode>,
     },
@@ -32,7 +44,7 @@ pub enum ParserError {
     Other(String),
 }
 
-pub struct Parser;
+pub struct Parser {}
 
 impl Parser {
     pub fn parse(tokens: Vec<Token>) -> Result<AstNode, ParserError> {
@@ -42,15 +54,28 @@ impl Parser {
 
         let program = tokens.first().unwrap().to_string();
 
-        let args = tokens
-            .iter()
-            .skip(1)
-            .map_while(|t| match t.ty {
-                TokenType::Word(_) => Some(t.to_string()),
-            })
-            .collect::<Vec<String>>();
+        let mut args: Vec<String> = vec![];
+        let mut redirections = vec![];
 
-        let command = Command::new(program, args);
+        let mut iter = tokens.iter().skip(1);
+        while let Some(token) = iter.next() {
+            match &token.ty {
+                TokenType::Word(_) => args.push(token.to_string()),
+                TokenType::Redirection(op) => {
+                    if let Some(file_token) = iter.next() {
+                        redirections.push(Redirection {
+                            op: op.clone(),
+                            file: file_token.to_string(),
+                        });
+                    } else {
+                        eprintln!("syntax error: expected file name after redirection operator");
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let command = Command::new(program, args, redirections);
         let ast = AstNode::new(command);
         Ok(ast)
     }

@@ -1,13 +1,15 @@
 use std::{
     fmt::{Display, Formatter},
-    io::{self, Write},
     iter::Peekable,
     str::Chars,
 };
 
+use crate::keywords::REDIRECTION_OPERATORS;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum LexerError {
     UnterminatedString,
+    Redirection(RedirectionOperator),
     Other(String),
 }
 
@@ -18,9 +20,61 @@ pub enum WordPart {
     DoubleQuoted(String),
 }
 
+impl Display for WordPart {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WordPart::Unquoted(val) | WordPart::SingleQuoted(val) | WordPart::DoubleQuoted(val) => {
+                write!(f, "{val}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RedirectionOperator {
+    Overwrite,
+    OverwriteError,
+    Append,
+    AppendError,
+    Input,
+}
+
+impl Display for RedirectionOperator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Overwrite => write!(f, ">"),
+            Self::OverwriteError => write!(f, "2>"),
+            Self::Append => write!(f, ">>"),
+            Self::AppendError => write!(f, "2>>"),
+            Self::Input => write!(f, "<"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ControlOperator {
+    Pipe,     // |
+    And,      // &&
+    Or,       // ||
+    Sequence, // ;
+}
+
+impl Display for ControlOperator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pipe => write!(f, "|"),
+            Self::And => write!(f, "&&"),
+            Self::Or => write!(f, "||"),
+            Self::Sequence => write!(f, ";"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum TokenType {
     Word(Vec<WordPart>),
+    Redirection(RedirectionOperator),
+    Operator(ControlOperator),
 }
 
 #[derive(Debug)]
@@ -40,21 +94,19 @@ impl Display for Token {
             TokenType::Word(word) => {
                 let mut word_str = String::new();
                 for part in word {
-                    match part {
-                        WordPart::Unquoted(val)
-                        | WordPart::SingleQuoted(val)
-                        | WordPart::DoubleQuoted(val) => {
-                            word_str.push_str(val);
-                        }
-                    }
+                    word_str.push_str(&part.to_string());
                 }
 
                 write!(f, "{word_str}")
             }
+
+            TokenType::Redirection(op) => write!(f, "{op}"),
+            TokenType::Operator(op) => write!(f, "{op}"),
         }
     }
 }
 
+#[allow(dead_code)]
 pub struct TokenList(pub Vec<Token>);
 
 impl Display for TokenList {
@@ -65,83 +117,68 @@ impl Display for TokenList {
     }
 }
 
-pub struct Lexer {
-    _curr_offset: usize,
+pub struct Lexer<'a> {
+    chars: Peekable<Chars<'a>>,
 }
 
-impl Lexer {
-    pub fn new() -> Self {
-        Self { _curr_offset: 0 }
-    }
-
-    pub fn scan_until_complete(&self, command: &str) -> Vec<Token> {
-        let tokens = self.scan(command);
-        loop {
-            if tokens.is_ok() {
-                return tokens.unwrap();
-            }
-
-            if tokens.err().unwrap() == LexerError::UnterminatedString {
-                print!("> ");
-                io::stdout().flush().unwrap();
-
-                let mut next_part = String::new();
-                io::stdin().read_line(&mut next_part).unwrap();
-                next_part.push_str(command);
-
-                return self.scan_until_complete(&next_part);
-            }
-
-            return vec![];
+impl<'a> Lexer<'a> {
+    pub fn new(command: &'a str) -> Self {
+        Self {
+            chars: command.chars().peekable(),
         }
     }
 
-    fn scan(&self, command: &str) -> Result<Vec<Token>, LexerError> {
-        let chars = &mut command.chars().peekable();
-        let tokens = self.scan_tokens(chars)?;
-        Ok(tokens)
-    }
-
-    fn scan_tokens(&self, chars: &mut Peekable<Chars>) -> Result<Vec<Token>, LexerError> {
+    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, LexerError> {
         let mut tokens = vec![];
 
-        while let Some(char) = chars.peek() {
+        while let Some(&char) = self.chars.peek() {
             if char.is_whitespace() {
-                chars.next().unwrap();
+                self.chars.next().unwrap();
                 continue;
             }
 
-            tokens.push(self.scan_word(chars)?);
+            let (is_redirection_operator, is_error) = self.is_a_redirection_operator(&char);
+
+            if is_redirection_operator {
+                let redirection_operator = self.get_redirection_operator(&char, is_error);
+                let token = Token::new(TokenType::Redirection(redirection_operator));
+                tokens.push(token);
+
+                self.chars.next().unwrap();
+
+                continue;
+            }
+
+            tokens.push(self.scan_word()?);
         }
 
         Ok(tokens)
     }
 
-    fn scan_word(&self, chars: &mut Peekable<Chars>) -> Result<Token, LexerError> {
+    fn scan_word(&mut self) -> Result<Token, LexerError> {
         let mut word_parts = vec![];
-        while let Some(char) = chars.peek() {
-            if char.is_whitespace() {
+
+        while let Some(char) = self.chars.peek() {
+            if char.is_whitespace() || REDIRECTION_OPERATORS.get(char).is_some() {
                 return Ok(Token::new(TokenType::Word(word_parts)));
             }
 
-            if *char == '\'' {
-                word_parts.push(self.scan_single_quoted_word(chars)?);
-            } else if *char == '"' {
-                word_parts.push(self.scan_double_quoted_word(chars)?);
-            } else {
-                word_parts.push(self.scan_unquoted_word(chars)?);
+            match *char {
+                '\'' => word_parts.push(self.scan_single_quoted_word()?),
+                '"' => word_parts.push(self.scan_double_quoted_word()?),
+                _ => word_parts.push(self.scan_unquoted_word()?),
             }
         }
 
         Ok(Token::new(TokenType::Word(word_parts)))
     }
 
-    fn scan_single_quoted_word(&self, chars: &mut Peekable<Chars>) -> Result<WordPart, LexerError> {
-        chars.next();
+    fn scan_single_quoted_word(&mut self) -> Result<WordPart, LexerError> {
+        self.chars.next();
 
         let mut word_part = String::new();
 
-        while let Some(char) = chars.next() {
+        while let Some(char) = self.chars.next() {
             if char == '\'' {
                 return Ok(WordPart::SingleQuoted(word_part));
             }
@@ -152,14 +189,17 @@ impl Lexer {
         Err(LexerError::UnterminatedString)
     }
 
-    fn scan_double_quoted_word(&self, chars: &mut Peekable<Chars>) -> Result<WordPart, LexerError> {
-        chars.next();
+    fn scan_double_quoted_word(&mut self) -> Result<WordPart, LexerError> {
+        self.chars.next();
 
         let mut word_part = String::new();
 
-        while let Some(char) = chars.next() {
+        while let Some(char) = self.chars.next() {
             if char == '\\' {
-                let next_char = chars.next().ok_or_else(|| LexerError::UnterminatedString)?;
+                let next_char = self
+                    .chars
+                    .next()
+                    .ok_or_else(|| LexerError::UnterminatedString)?;
                 if next_char != '"' && next_char != '\\' {
                     word_part.push(char);
                 }
@@ -174,19 +214,66 @@ impl Lexer {
         Err(LexerError::UnterminatedString)
     }
 
-    fn scan_unquoted_word(&self, chars: &mut Peekable<Chars>) -> Result<WordPart, LexerError> {
+    fn scan_unquoted_word(&mut self) -> Result<WordPart, LexerError> {
         let mut word_part = String::new();
 
-        while let Some(char) = chars.peek() {
+        while let Some(char) = self.chars.peek() {
             if *char == '\\' {
-                chars.next();
-            } else if *char == '\'' || *char == '"' || char.is_whitespace() {
+                self.chars.next();
+            } else if *char == '\''
+                || *char == '"'
+                || char.is_whitespace()
+                || REDIRECTION_OPERATORS.contains(char)
+            {
                 return Ok(WordPart::Unquoted(word_part));
             }
 
-            word_part.push(chars.next().unwrap());
+            word_part.push(self.chars.next().unwrap());
         }
 
         Ok(WordPart::Unquoted(word_part))
+    }
+
+    /// @returns (is_operator, is_error)
+    fn is_a_redirection_operator(&mut self, char: &char) -> (bool, bool) {
+        if *char == '1' || *char == '2' {
+            let mut look_ahead: Peekable<Chars<'a>> = self.chars.clone();
+            look_ahead.next();
+
+            if let Some(c) = look_ahead.peek()
+                && REDIRECTION_OPERATORS.contains(c)
+            {
+                self.chars.next();
+                return (true, *char == '2');
+            }
+        }
+
+        (REDIRECTION_OPERATORS.contains(char), false)
+    }
+
+    fn get_redirection_operator(&mut self, char: &char, is_error: bool) -> RedirectionOperator {
+        if *char == '>' {
+            let mut look_ahead: Peekable<Chars<'a>> = self.chars.clone();
+            look_ahead.next();
+
+            if let Some(c) = look_ahead.peek()
+                && *c == '>'
+            {
+                self.chars.next();
+                if is_error {
+                    RedirectionOperator::AppendError
+                } else {
+                    RedirectionOperator::Append
+                }
+            } else {
+                if is_error {
+                    RedirectionOperator::OverwriteError
+                } else {
+                    RedirectionOperator::Overwrite
+                }
+            }
+        } else {
+            RedirectionOperator::Input
+        }
     }
 }

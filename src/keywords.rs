@@ -9,3 +9,10 @@ pub static KEYWORDS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     set.insert("cd");
     set
 });
+
+pub static REDIRECTION_OPERATORS: LazyLock<HashSet<char>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert('>');
+    set.insert('<');
+    set
+});

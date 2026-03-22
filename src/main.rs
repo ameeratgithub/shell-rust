@@ -1,5 +1,7 @@
+use crossterm::cursor;
+
 use crate::{
-    lexer::Lexer,
+    lexer::{Lexer, LexerError},
     parser::Parser,
     vm::{VM, VMError},
 };
@@ -14,20 +16,35 @@ mod vm;
 
 fn main() {
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
+        let mut command: String = String::new();
 
-        let mut command = String::new();
-        io::stdin().read_line(&mut command).unwrap();
-
-        let command = command.trim();
-
-        if command == "exit" {
-            break;
+        if let Ok((col, _row)) = cursor::position() {
+            if col > 0 {
+                println!();
+            }
         }
 
-        let lexer = Lexer::new();
-        let tokens = lexer.scan_until_complete(command);
+        print!("$ ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut command).unwrap();
+
+        command = command.trim().to_string();
+
+        let tokens = loop {
+            let mut lexer = Lexer::new(&command);
+            match lexer.scan_tokens() {
+                Ok(tokens) => break tokens,
+                Err(LexerError::UnterminatedString) => {
+                    print!("> ");
+                    io::stdout().flush().unwrap();
+                    io::stdin().read_line(&mut command).unwrap();
+                }
+                Err(_) => {
+                    eprintln!("Lexer Error");
+                    return;
+                }
+            }
+        };
         // println!("{tokens:?}");
 
         let parse_result = Parser::parse(tokens);
