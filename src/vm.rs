@@ -4,7 +4,7 @@ use std::{
     env,
     fs::{self, File, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
     str::FromStr,
 };
@@ -89,6 +89,11 @@ impl VM {
         }
 
         let redirection = redirections.first().unwrap();
+
+        let path = Path::new(&redirection.file);
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
 
         if redirection.op == RedirectionOperator::Overwrite {
             File::create(&redirection.file).ok()

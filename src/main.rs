@@ -18,11 +18,11 @@ fn main() {
     loop {
         let mut command: String = String::new();
 
-        if let Ok((col, _row)) = cursor::position() {
-            if col > 0 {
-                println!();
-            }
-        }
+        // if let Ok((col, _row)) = cursor::position() {
+        //     if col > 0 {
+        //         println!();
+        //     }
+        // }
 
         print!("$ ");
         io::stdout().flush().unwrap();

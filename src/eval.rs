@@ -1,6 +1,3 @@
-#[cfg(windows)]
-use std::fs::Metadata;
-#[cfg(unix)]
 use std::fs::Metadata;
 use std::{
     env, fs,
