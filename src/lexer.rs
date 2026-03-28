@@ -9,7 +9,7 @@ use crate::keywords::REDIRECTION_OPERATORS;
 #[derive(Debug, PartialEq, Eq)]
 pub enum LexerError {
     UnterminatedString,
-    Redirection(RedirectionOperator),
+    Redirection(String),
     Other(String),
 }
 
@@ -140,7 +140,14 @@ impl<'a> Lexer<'a> {
             let (is_redirection_operator, is_error) = self.is_a_redirection_operator(&char);
 
             if is_redirection_operator {
-                let redirection_operator = self.get_redirection_operator(&char, is_error);
+                let c = self
+                    .chars
+                    .peek()
+                    .ok_or(LexerError::Redirection(String::from(
+                        "Invalid Redirection operator",
+                    ))).cloned()?;
+
+                let redirection_operator = self.get_redirection_operator(&c, is_error);
                 let token = Token::new(TokenType::Redirection(redirection_operator));
                 tokens.push(token);
 

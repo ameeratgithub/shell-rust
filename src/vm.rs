@@ -40,6 +40,16 @@ impl VM {
         let program = command.program.as_str();
         let mut args = command.args;
 
+        let redirection = command.redirections.first();
+
+        let mut write_error_to_file = false;
+        let mut file = None;
+
+        if let Some(rd) = redirection {
+            write_error_to_file = VM::is_error_redirection(rd);
+            file = VM::get_file_for_redirection(rd);
+        }
+
         if KEYWORDS.contains(program) {
             let output_result = match program {
                 "echo" => VM::execute_echo(args),
@@ -53,9 +63,10 @@ impl VM {
             match output_result {
                 Ok(output_string) => {
                     if !output_string.is_empty() {
-                        if let Some(mut file) = VM::get_file_for_redirection(&command.redirections)
+                        if let Some(mut f) = file
+                            && !write_error_to_file
                         {
-                            let _ = writeln!(file, "{}", output_string);
+                            let _ = writeln!(f, "{}", output_string);
                         } else {
                             println!("{output_string}");
                         }
@@ -63,7 +74,11 @@ impl VM {
                 }
                 Err(e) => {
                     if !e.is_empty() {
-                        eprintln!("{e}");
+                        if let Some(mut f) = file && write_error_to_file {
+                            let _ = writeln!(f, "{}", e);
+                        } else {
+                            eprintln!("{e}");
+                        }
                     }
                 }
             }
@@ -71,11 +86,8 @@ impl VM {
             return Ok(());
         }
 
-        let stdio = VM::get_file_for_redirection(&command.redirections)
-            .map(Stdio::from)
-            .unwrap_or_else(Stdio::inherit);
-
-        let external_result = VM::execute_program(program, &mut args, stdio);
+        let external_result =
+            VM::execute_program(program, &mut args, redirection, write_error_to_file);
         if let Err(e) = external_result {
             eprintln!("{}", e);
         }
@@ -83,13 +95,12 @@ impl VM {
         Ok(())
     }
 
-    fn get_file_for_redirection(redirections: &Vec<Redirection>) -> Option<File> {
-        if redirections.is_empty() {
-            return None;
-        }
+    fn is_error_redirection(redirection: &Redirection) -> bool {
+        redirection.op == RedirectionOperator::AppendError
+            || redirection.op == RedirectionOperator::OverwriteError
+    }
 
-        let redirection = redirections.first().unwrap();
-
+    fn get_file_for_redirection(redirection: &Redirection) -> Option<File> {
         let path = Path::new(&redirection.file);
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -157,16 +168,32 @@ impl VM {
     fn execute_program(
         program: &str,
         args: &mut Vec<String>,
-        stdio: Stdio,
+        redirection: Option<&Redirection>,
+        is_error: bool,
     ) -> Result<String, String> {
         if !program.contains(" ") {
             check_executable_file_exists_in_paths(program)
                 .ok_or_else(|| format!("{program}: command not found"))?;
         }
 
+        let (stdout_cfg, stderr_cfg) = if let Some(rd) = redirection {
+            let file_stdio = VM::get_file_for_redirection(rd)
+                .map(Stdio::from)
+                .unwrap_or_else(Stdio::inherit);
+
+            if is_error {
+                (Stdio::inherit(), file_stdio)
+            } else {
+                (file_stdio, Stdio::inherit())
+            }
+        } else {
+            (Stdio::inherit(), Stdio::inherit())
+        };
+
         ProcessCommand::new(program)
             .args(&mut args[0..])
-            .stdout(stdio)
+            .stdout(stdout_cfg)
+            .stderr(stderr_cfg)
             .status()
             .map_err(|_| format!("{program}: command not found"))?;
 
