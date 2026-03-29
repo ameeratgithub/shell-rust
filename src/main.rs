@@ -40,7 +40,7 @@ impl Completer for ShellHelper {
             .filter(|cmd| cmd.starts_with(word))
             .map(|cmd| Pair {
                 display: cmd.clone(),
-                replacement: cmd.clone(),
+                replacement: format!("{} ", cmd),
             })
             .collect();
 
@@ -67,7 +67,7 @@ fn main() {
         .build();
     let mut rl = Editor::with_config(config).unwrap();
 
-    let mut built_in_commands = vec!["echo ".to_string(), "exit ".to_string()];
+    let mut built_in_commands = vec!["echo".to_string(), "exit".to_string()];
     built_in_commands.extend(get_path_files());
     built_in_commands.sort();
     built_in_commands.dedup();
