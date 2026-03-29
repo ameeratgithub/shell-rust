@@ -208,7 +208,6 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
             let path = directory.join(file);
             if path.exists() {
                 let metadata = fs::metadata(&path).unwrap();
-
                 if is_executable(&metadata) {
                     return path.to_str().map(|str| str.to_owned());
                 }
