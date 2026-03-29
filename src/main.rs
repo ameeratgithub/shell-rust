@@ -1,7 +1,7 @@
 use std::{env, fs};
 
 use rustyline::{
-    Editor, Helper, Highlighter, Hinter, Validator,
+    CompletionType, Config, Editor, Helper, Highlighter, Hinter, Validator,
     completion::{Completer, Pair, extract_word},
     error::ReadlineError,
 };
@@ -34,16 +34,15 @@ impl Completer for ShellHelper {
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let (start, word) = extract_word(line, pos, None, |c| c == ' ');
-        let mut matches = Vec::new();
 
-        for cmd in &self.commands {
-            if cmd.starts_with(word) {
-                matches.push(Pair {
-                    display: cmd.clone(),
-                    replacement: cmd.clone(),
-                });
-            }
-        }
+        let matches: Vec<Pair> = self.commands
+            .iter()
+            .filter(|cmd| cmd.starts_with(word))
+            .map(|cmd| Pair {
+                display: cmd.clone(),
+                replacement: cmd.clone(),
+            })
+            .collect();
 
         Ok((start, matches))
     }
@@ -60,14 +59,18 @@ fn get_path_files() -> Vec<String> {
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_file()))
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .map(|f|f+" ")
         .collect()
 }
 fn main() {
-    let mut rl = Editor::new().unwrap();
-  
+    let config = Config::builder()
+        .completion_type(CompletionType::List)
+        .build();
+    let mut rl = Editor::with_config(config).unwrap();
+
     let mut built_in_commands = vec!["echo ".to_string(), "exit ".to_string()];
     built_in_commands.extend(get_path_files());
+    built_in_commands.sort();
+    built_in_commands.dedup();
 
     let helper = ShellHelper {
         commands: built_in_commands,
