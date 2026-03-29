@@ -1,11 +1,16 @@
-use crossterm::cursor;
+// use crossterm::cursor;
+
+use rustyline::{
+    Editor, Helper, Highlighter, Hinter, Validator,
+    completion::{Completer, Pair, extract_word},
+    error::ReadlineError,
+};
 
 use crate::{
     lexer::{Lexer, LexerError},
     parser::Parser,
     vm::{VM, VMError},
 };
-use std::io::{self, Write};
 
 #[allow(unused_imports)]
 mod eval;
@@ -14,30 +19,79 @@ mod lexer;
 mod parser;
 mod vm;
 
+#[derive(Helper, Highlighter, Hinter, Validator)]
+struct ShellHelper {
+    commands: Vec<String>,
+}
+
+impl Completer for ShellHelper {
+    type Candidate = Pair;
+
+    fn complete(
+        &self, // FIXME should be `&mut self`
+        line: &str,
+        pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        let (start, word) = extract_word(line, pos, None, |c| c == ' ');
+        let mut matches = Vec::new();
+
+        for cmd in &self.commands {
+            if cmd.starts_with(word) {
+                matches.push(Pair {
+                    display: cmd.clone(),
+                    replacement: cmd.clone(),
+                });
+            }
+        }
+
+        Ok((start, matches))
+    }
+}
+
 fn main() {
+    let mut rl = Editor::new().unwrap();
+    let helper = ShellHelper {
+        commands: vec!["echo ".to_string(), "exit ".to_string()],
+    };
+
+    rl.set_helper(Some(helper));
+
     loop {
         let mut command: String = String::new();
 
-        // if let Ok((col, _row)) = cursor::position() {
-        //     if col > 0 {
-        //         println!();
-        //     }
-        // }
-
-        print!("$ ");
-        io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut command).unwrap();
+        match rl.readline("$ ") {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str()).unwrap();
+                command.push_str(&line);
+            }
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(err) => {
+                eprintln!("Error: {err:?}");
+                break;
+            }
+        }
 
         command = command.trim().to_string();
+        if command.is_empty() {
+            continue;
+        }
 
         let tokens = loop {
             let mut lexer = Lexer::new(&command);
             match lexer.scan_tokens() {
                 Ok(tokens) => break tokens,
                 Err(LexerError::UnterminatedString) => {
-                    print!("> ");
-                    io::stdout().flush().unwrap();
-                    io::stdin().read_line(&mut command).unwrap();
+                    match rl.readline("> ") {
+                        Ok(line) => {
+                            rl.add_history_entry(line.as_str()).unwrap();
+                            command.push('\n');
+                            command.push_str(&line);
+                        }
+                        Err(_) => return,
+                    }
                 }
                 Err(_) => {
                     eprintln!("Lexer Error");
