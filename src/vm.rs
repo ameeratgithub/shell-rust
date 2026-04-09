@@ -170,13 +170,17 @@ impl VM {
 
     fn get_history() -> Result<String, String> {
         let file = File::open(get_history_path()).map_err(|e| e.to_string())?;
-        
+
         let reader = BufReader::new(file);
         let history_string = reader
             .lines()
-            .skip(1) 
+            .skip(1)
             .collect::<Result<Vec<String>, _>>()
             .map_err(|e| e.to_string())?
+            .iter()
+            .enumerate()
+            .map(|(index, item)| format!("  {}  {item}", index + 1))
+            .collect::<Vec<String>>()
             .join("\n");
 
         Ok(history_string)
