@@ -3,14 +3,14 @@ use std::fs::Metadata;
 use std::{
     env,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdout, Command as ProcessCommand, Stdio},
     str::FromStr,
 };
 
 use crate::{
-    HISTORY_FILE_PATH, get_history_path,
+    get_history_path,
     keywords::KEYWORDS,
     lexer::RedirectionOperator,
     parser::{AstNode, Command, Redirection},
@@ -91,7 +91,17 @@ impl VM {
             let output_result = match program {
                 "echo" => VM::execute_echo(args),
                 "exit" => return Err(VMError::Exit),
-                "history" => VM::get_history(),
+                "history" => {
+                    let skip = if let Some(arg) = args.first().take()
+                        && let Ok(skip) = usize::from_str(arg)
+                    {
+                        Some(skip)
+                    } else {
+                        None
+                    };
+
+                    VM::get_history(skip)
+                }
                 "pwd" => VM::print_working_directory(),
                 "cd" => VM::change_directory(args),
                 "type" => VM::check_type_of_command(args),
@@ -168,18 +178,26 @@ impl VM {
         Ok(format!("{output}"))
     }
 
-    fn get_history() -> Result<String, String> {
+    fn get_history(from_end: Option<usize>) -> Result<String, String> {
         let file = File::open(get_history_path()).map_err(|e| e.to_string())?;
-
         let reader = BufReader::new(file);
-        let history_string = reader
+
+        let lines = reader
             .lines()
             .skip(1)
             .collect::<Result<Vec<String>, _>>()
-            .map_err(|e| e.to_string())?
-            .iter()
+            .map_err(|e| e.to_string())?;
+
+        let skip_count = match from_end {
+            Some(n) => lines.len().saturating_sub(n),
+            None => 0,
+        };
+
+        let history_string = lines
+            .into_iter()
             .enumerate()
-            .map(|(index, item)| format!("    {}  {item}", index + 1))
+            .skip(skip_count)
+            .map(|(index, item)| format!("    {}  {}", index + 1, item))
             .collect::<Vec<String>>()
             .join("\n");
 

@@ -84,7 +84,7 @@ fn main() {
         .unwrap();
 
     let mut rl = Editor::with_config(config).unwrap();
-    let _ = rl.load_history(get_history_path());
+    // let _ = rl.load_history(get_history_path());
 
     let mut built_in_commands = vec!["echo".to_string(), "exit".to_string()];
     built_in_commands.extend(get_path_files());
@@ -103,7 +103,7 @@ fn main() {
         match rl.readline("$ ") {
             Ok(line) => {
                 rl.add_history_entry(line.as_str()).unwrap();
-                rl.append_history(get_history_path()).unwrap();
+                rl.save_history(get_history_path()).unwrap();
                 command.push_str(&line);
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -127,7 +127,7 @@ fn main() {
                 Err(LexerError::UnterminatedString) => match rl.readline("> ") {
                     Ok(line) => {
                         rl.add_history_entry(line.as_str()).unwrap();
-                        rl.append_history(get_history_path()).unwrap();
+                        rl.save_history(get_history_path()).unwrap();
 
                         command.push('\n');
                         command.push_str(&line);
