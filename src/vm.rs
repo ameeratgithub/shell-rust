@@ -3,18 +3,25 @@ use std::fs::Metadata;
 use std::{
     env,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdout, Command as ProcessCommand, Stdio},
     str::FromStr,
 };
 
 use crate::{
-    RL_EDITOR, get_history_path,
+    RL_EDITOR,
     keywords::KEYWORDS,
     lexer::RedirectionOperator,
     parser::{AstNode, Command, Redirection},
 };
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum HistoryFileAction {
+    Read,
+    Write,
+    None,
+}
 
 pub enum PipeState {
     ChildOutput(ChildStdout),
@@ -172,54 +179,56 @@ impl VM {
         let mut iter = args.iter();
         let args = if let Some(arg) = iter.next().take() {
             if arg == "-r" {
-                (None, iter.next().cloned())
+                (None, iter.next().cloned(), HistoryFileAction::Read)
+            } else if arg == "-w" {
+                (None, iter.next().cloned(), HistoryFileAction::Write)
             } else if let Ok(skip) = usize::from_str(arg) {
-                (Some(skip), None)
+                (Some(skip), None, HistoryFileAction::None)
             } else {
-                (None, None)
+                (None, None, HistoryFileAction::None)
             }
         } else {
-            (None, None)
+            (None, None, HistoryFileAction::None)
         };
 
-        VM::get_history(args.0, args.1)
+        VM::get_history(args.0, args.1, args.2)
     }
 
-    fn get_history(from_end: Option<usize>, file_path: Option<String>) -> Result<String, String> {
+    fn get_history(
+        from_end: Option<usize>,
+        file_path: Option<String>,
+        action: HistoryFileAction,
+    ) -> Result<String, String> {
         let raw_lines = if let Some(p) = file_path.clone() {
-            let file = File::open(p).map_err(|e| e.to_string())?;
-            let reader = BufReader::new(file);
+            if action == HistoryFileAction::Read {
+                read_history_from_file(p, file_path.is_none())?
+            } else {
+                let lines = read_history_from_memory();
 
-            let skip_first_line = file_path.is_none();
+                if action == HistoryFileAction::Write {
+                    write_history_to_file(p, lines.clone())?;
+                    return Ok(String::new());
+                }
 
-            let mut lines_iter = reader.lines();
-            if skip_first_line {
-                let _ = lines_iter.next();
+                lines
             }
-
-            lines_iter
-                .collect::<Result<Vec<String>, _>>()
-                .map_err(|e| e.to_string())?
         } else {
-            let editor = RL_EDITOR.lock().unwrap();
-            editor
-                .history()
-                .iter()
-                .map(|entry| entry.to_string())
-                .collect()
+            read_history_from_memory()
         };
 
         if let Some(file_name) = file_path {
-            let mut editor = RL_EDITOR.lock().unwrap();
-            let _ = editor.clear_history();
+            if action == HistoryFileAction::Read {
+                let mut editor = RL_EDITOR.lock().unwrap();
+                let _ = editor.clear_history();
 
-            let _ = editor.add_history_entry(format!("history -r {}", file_name));
+                let _ = editor.add_history_entry(format!("history -r {}", file_name));
 
-            for line in raw_lines {
-                let _ = editor.add_history_entry(line);
+                for line in raw_lines {
+                    let _ = editor.add_history_entry(line);
+                }
+
+                return Ok(String::new());
             }
-
-            return Ok(String::new());
         }
 
         let skip_count = match from_end {
@@ -342,6 +351,49 @@ impl VM {
             Stdio::piped()
         }
     }
+}
+
+fn read_history_from_memory() -> Vec<String> {
+    let editor = RL_EDITOR.lock().unwrap();
+    editor
+        .history()
+        .iter()
+        .map(|entry| entry.to_string())
+        .collect()
+}
+
+fn write_history_to_file(path: String, data: Vec<String>) -> Result<(), String> {
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+
+    let mut writer = BufWriter::new(file);
+
+    for line in data {
+        writeln!(writer, "{}", line).map_err(|e| e.to_string())?;
+    }
+
+    writer.flush().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+fn read_history_from_file(path: String, skip_first_line: bool) -> Result<Vec<String>, String> {
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let reader = BufReader::new(file);
+
+    let mut lines_iter = reader.lines();
+    if skip_first_line {
+        let _ = lines_iter.next();
+    }
+
+    let result = lines_iter
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(result)
 }
 
 fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
