@@ -1,4 +1,6 @@
-use std::{env, fs};
+use std::{
+    env, fs::{self, OpenOptions}, path::PathBuf, sync::OnceLock
+};
 
 use rustyline::{
     CompletionType, Config, Editor, Helper, Highlighter, Hinter, Validator,
@@ -60,11 +62,29 @@ fn get_path_files() -> Vec<String> {
         .filter_map(|entry| entry.file_name().into_string().ok())
         .collect()
 }
+
+pub static HISTORY_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
+pub fn get_history_path() -> &'static PathBuf {
+    HISTORY_FILE_PATH.get_or_init(|| {
+        let mut path = home::home_dir().expect("Failed to find home directory");
+        path.push(".shell_history"); 
+        path
+    })
+}
+
 fn main() {
     let config = Config::builder()
         .completion_type(CompletionType::List)
         .build();
+
+    let _ = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(get_history_path())
+        .unwrap();
+
     let mut rl = Editor::with_config(config).unwrap();
+    let _ = rl.load_history(get_history_path());
 
     let mut built_in_commands = vec!["echo".to_string(), "exit".to_string()];
     built_in_commands.extend(get_path_files());
@@ -74,6 +94,7 @@ fn main() {
     let helper = ShellHelper {
         commands: built_in_commands,
     };
+
     rl.set_helper(Some(helper));
 
     loop {
@@ -82,6 +103,7 @@ fn main() {
         match rl.readline("$ ") {
             Ok(line) => {
                 rl.add_history_entry(line.as_str()).unwrap();
+                rl.append_history(get_history_path()).unwrap();
                 command.push_str(&line);
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -105,6 +127,8 @@ fn main() {
                 Err(LexerError::UnterminatedString) => match rl.readline("> ") {
                     Ok(line) => {
                         rl.add_history_entry(line.as_str()).unwrap();
+                        rl.append_history(get_history_path()).unwrap();
+
                         command.push('\n');
                         command.push_str(&line);
                     }

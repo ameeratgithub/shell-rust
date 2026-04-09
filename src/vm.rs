@@ -3,13 +3,14 @@ use std::fs::Metadata;
 use std::{
     env,
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdout, Command as ProcessCommand, Stdio},
     str::FromStr,
 };
 
 use crate::{
+    HISTORY_FILE_PATH, get_history_path,
     keywords::KEYWORDS,
     lexer::RedirectionOperator,
     parser::{AstNode, Command, Redirection},
@@ -90,6 +91,7 @@ impl VM {
             let output_result = match program {
                 "echo" => VM::execute_echo(args),
                 "exit" => return Err(VMError::Exit),
+                "history" => VM::get_history(),
                 "pwd" => VM::print_working_directory(),
                 "cd" => VM::change_directory(args),
                 "type" => VM::check_type_of_command(args),
@@ -166,6 +168,20 @@ impl VM {
         Ok(format!("{output}"))
     }
 
+    fn get_history() -> Result<String, String> {
+        let file = File::open(get_history_path()).map_err(|e| e.to_string())?;
+        
+        let reader = BufReader::new(file);
+        let history_string = reader
+            .lines()
+            .skip(1) 
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(|e| e.to_string())?
+            .join("\n");
+
+        Ok(history_string)
+    }
+
     fn print_working_directory() -> Result<String, String> {
         match env::current_dir() {
             Ok(curr_dir) => Ok(format!("{}", curr_dir.display())),
@@ -230,16 +246,14 @@ impl VM {
             (self.get_default_stdio(), self.get_default_stdio())
         };
 
-        let mut builtin_text_to_write=None;
+        let mut builtin_text_to_write = None;
 
         let default_stdin = match self.previous_state.take() {
             Some(PipeState::BuiltinString(text)) => {
-                builtin_text_to_write=Some(text);
+                builtin_text_to_write = Some(text);
                 Stdio::piped()
-            },
-            Some(PipeState::ChildOutput(child_stdout)) => {
-                Stdio::from(child_stdout)
             }
+            Some(PipeState::ChildOutput(child_stdout)) => Stdio::from(child_stdout),
             None => Stdio::inherit(),
         };
 

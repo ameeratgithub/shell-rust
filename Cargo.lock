@@ -48,6 +48,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "crossterm",
+ "home",
  "rustyline",
  "thiserror",
 ]

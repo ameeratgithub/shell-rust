@@ -7,6 +7,7 @@ pub static KEYWORDS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     set.insert("pwd");
     set.insert("type");
     set.insert("cd");
+    set.insert("history");
     set
 });
 
