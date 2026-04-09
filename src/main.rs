@@ -1,11 +1,15 @@
 use std::{
-    env, fs::{self, OpenOptions}, path::PathBuf, sync::OnceLock
+    env,
+    fs::{self, OpenOptions},
+    path::PathBuf,
+    sync::{LazyLock, Mutex, OnceLock},
 };
 
 use rustyline::{
     CompletionType, Config, Editor, Helper, Highlighter, Hinter, Validator,
     completion::{Completer, Pair, extract_word},
     error::ReadlineError,
+    history::FileHistory,
 };
 
 use crate::{
@@ -67,43 +71,54 @@ pub static HISTORY_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 pub fn get_history_path() -> &'static PathBuf {
     HISTORY_FILE_PATH.get_or_init(|| {
         let mut path = home::home_dir().expect("Failed to find home directory");
-        path.push(".shell_history"); 
+        path.push(".shell_history");
         path
     })
 }
 
-fn main() {
+static RL_EDITOR: LazyLock<Mutex<Editor<ShellHelper, FileHistory>>> = LazyLock::new(|| {
     let config = Config::builder()
         .completion_type(CompletionType::List)
         .build();
+    let editor = Editor::with_config(config).unwrap();
+    Mutex::new(editor)
+});
 
+fn main() {
     let _ = OpenOptions::new()
         .create(true)
         .append(true)
         .open(get_history_path())
         .unwrap();
+    {
+        let mut editor = RL_EDITOR.lock().unwrap();
+        // let _ = editor.load_history(get_history_path(None));
 
-    let mut rl = Editor::with_config(config).unwrap();
-    // let _ = rl.load_history(get_history_path());
+        let mut built_in_commands = vec!["echo".to_string(), "exit".to_string()];
+        built_in_commands.extend(get_path_files());
+        built_in_commands.sort();
+        built_in_commands.dedup();
 
-    let mut built_in_commands = vec!["echo".to_string(), "exit".to_string()];
-    built_in_commands.extend(get_path_files());
-    built_in_commands.sort();
-    built_in_commands.dedup();
+        let helper = ShellHelper {
+            commands: built_in_commands,
+        };
 
-    let helper = ShellHelper {
-        commands: built_in_commands,
-    };
-
-    rl.set_helper(Some(helper));
+        editor.set_helper(Some(helper));
+    }
 
     loop {
         let mut command: String = String::new();
 
-        match rl.readline("$ ") {
+        let realine_result = {
+            let mut editor = RL_EDITOR.lock().unwrap();
+            editor.readline("$ ")
+        };
+
+        match realine_result {
             Ok(line) => {
-                rl.add_history_entry(line.as_str()).unwrap();
-                rl.save_history(get_history_path()).unwrap();
+                let mut editor = RL_EDITOR.lock().unwrap();
+                editor.add_history_entry(line.as_str()).unwrap();
+                // editor.append_history(get_history_path(None)).unwrap();
                 command.push_str(&line);
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -124,16 +139,23 @@ fn main() {
             let mut lexer = Lexer::new(&command);
             match lexer.scan_tokens() {
                 Ok(tokens) => break tokens,
-                Err(LexerError::UnterminatedString) => match rl.readline("> ") {
-                    Ok(line) => {
-                        rl.add_history_entry(line.as_str()).unwrap();
-                        rl.save_history(get_history_path()).unwrap();
+                Err(LexerError::UnterminatedString) => {
+                    let realine_result = {
+                        let mut editor = RL_EDITOR.lock().unwrap();
+                        editor.readline("$ ")
+                    };
+                    match realine_result {
+                        Ok(line) => {
+                            let mut editor = RL_EDITOR.lock().unwrap();
+                            editor.add_history_entry(line.as_str()).unwrap();
+                            // editor.append_history(get_history_path(None)).unwrap();
 
-                        command.push('\n');
-                        command.push_str(&line);
+                            command.push('\n');
+                            command.push_str(&line);
+                        }
+                        Err(_) => return,
                     }
-                    Err(_) => return,
-                },
+                }
                 Err(_) => {
                     eprintln!("Lexer Error");
                     return;

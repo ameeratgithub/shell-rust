@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    get_history_path,
+    RL_EDITOR, get_history_path,
     keywords::KEYWORDS,
     lexer::RedirectionOperator,
     parser::{AstNode, Command, Redirection},
@@ -91,17 +91,7 @@ impl VM {
             let output_result = match program {
                 "echo" => VM::execute_echo(args),
                 "exit" => return Err(VMError::Exit),
-                "history" => {
-                    let skip = if let Some(arg) = args.first().take()
-                        && let Ok(skip) = usize::from_str(arg)
-                    {
-                        Some(skip)
-                    } else {
-                        None
-                    };
-
-                    VM::get_history(skip)
-                }
+                "history" => VM::execute_history(args),
                 "pwd" => VM::print_working_directory(),
                 "cd" => VM::change_directory(args),
                 "type" => VM::check_type_of_command(args),
@@ -178,22 +168,66 @@ impl VM {
         Ok(format!("{output}"))
     }
 
-    fn get_history(from_end: Option<usize>) -> Result<String, String> {
-        let file = File::open(get_history_path()).map_err(|e| e.to_string())?;
-        let reader = BufReader::new(file);
+    fn execute_history(args: &Vec<String>) -> Result<String, String> {
+        let mut iter = args.iter();
+        let args = if let Some(arg) = iter.next().take() {
+            if arg == "-r" {
+                (None, iter.next().cloned())
+            } else if let Ok(skip) = usize::from_str(arg) {
+                (Some(skip), None)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
 
-        let lines = reader
-            .lines()
-            .skip(1)
-            .collect::<Result<Vec<String>, _>>()
-            .map_err(|e| e.to_string())?;
+        VM::get_history(args.0, args.1)
+    }
+
+    fn get_history(from_end: Option<usize>, file_path: Option<String>) -> Result<String, String> {
+        let raw_lines = if let Some(p) = file_path.clone() {
+            let file = File::open(p).map_err(|e| e.to_string())?;
+            let reader = BufReader::new(file);
+
+            let skip_first_line = file_path.is_none();
+
+            let mut lines_iter = reader.lines();
+            if skip_first_line {
+                let _ = lines_iter.next();
+            }
+
+            lines_iter
+                .collect::<Result<Vec<String>, _>>()
+                .map_err(|e| e.to_string())?
+        } else {
+            let editor = RL_EDITOR.lock().unwrap();
+            editor
+                .history()
+                .iter()
+                .map(|entry| entry.to_string())
+                .collect()
+        };
+
+        if let Some(file_name) = file_path {
+            let mut editor = RL_EDITOR.lock().unwrap();
+            let _ = editor.clear_history();
+
+            let _ = editor.add_history_entry(format!("history -r {}", file_name));
+
+            for line in raw_lines {
+                let _ = editor.add_history_entry(line);
+            }
+
+            return Ok(String::new());
+        }
 
         let skip_count = match from_end {
-            Some(n) => lines.len().saturating_sub(n),
+            Some(n) => raw_lines.len().saturating_sub(n),
             None => 0,
         };
 
-        let history_string = lines
+        let history_string = raw_lines
             .into_iter()
             .enumerate()
             .skip(skip_count)
