@@ -20,6 +20,7 @@ use crate::{
 pub enum HistoryFileAction {
     Read,
     Write,
+    Append,
     None,
 }
 
@@ -182,6 +183,8 @@ impl VM {
                 (None, iter.next().cloned(), HistoryFileAction::Read)
             } else if arg == "-w" {
                 (None, iter.next().cloned(), HistoryFileAction::Write)
+            } else if arg == "-a" {
+                (None, iter.next().cloned(), HistoryFileAction::Append)
             } else if let Ok(skip) = usize::from_str(arg) {
                 (Some(skip), None, HistoryFileAction::None)
             } else {
@@ -205,8 +208,8 @@ impl VM {
             } else {
                 let lines = read_history_from_memory();
 
-                if action == HistoryFileAction::Write {
-                    write_history_to_file(p, lines.clone())?;
+                if action == HistoryFileAction::Write || action == HistoryFileAction::Append {
+                    write_history_to_file(p, lines.clone(), action == HistoryFileAction::Append)?;
                     return Ok(String::new());
                 }
 
@@ -362,10 +365,10 @@ fn read_history_from_memory() -> Vec<String> {
         .collect()
 }
 
-fn write_history_to_file(path: String, data: Vec<String>) -> Result<(), String> {
+fn write_history_to_file(path: String, data: Vec<String>, append: bool) -> Result<(), String> {
     let file = OpenOptions::new()
         .create(true)
-        .append(true)
+        .append(append)
         .open(path)
         .map_err(|e| e.to_string())?;
 
