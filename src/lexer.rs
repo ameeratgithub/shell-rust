@@ -133,25 +133,32 @@ impl<'a> Lexer<'a> {
 
         while let Some(&char) = self.chars.peek() {
             if char.is_whitespace() {
-                self.chars.next().unwrap();
+                self.chars.next();
+                continue;
+            }
+
+            if char == '|' {
+                self.chars.next();
+                let token = Token::new(TokenType::Operator(ControlOperator::Pipe));
+                tokens.push(token);
                 continue;
             }
 
             let (is_redirection_operator, is_error) = self.is_a_redirection_operator(&char);
-
             if is_redirection_operator {
                 let c = self
                     .chars
                     .peek()
                     .ok_or(LexerError::Redirection(String::from(
                         "Invalid Redirection operator",
-                    ))).cloned()?;
+                    )))
+                    .cloned()?;
 
                 let redirection_operator = self.get_redirection_operator(&c, is_error);
                 let token = Token::new(TokenType::Redirection(redirection_operator));
                 tokens.push(token);
 
-                self.chars.next().unwrap();
+                self.chars.next();
 
                 continue;
             }
@@ -235,7 +242,11 @@ impl<'a> Lexer<'a> {
                 return Ok(WordPart::Unquoted(word_part));
             }
 
-            word_part.push(self.chars.next().unwrap());
+            word_part.push(
+                self.chars
+                    .next()
+                    .ok_or(LexerError::Other(String::from("Character expected")))?,
+            );
         }
 
         Ok(WordPart::Unquoted(word_part))

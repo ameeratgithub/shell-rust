@@ -1,12 +1,12 @@
 use crate::lexer::{ControlOperator, RedirectionOperator, Token, TokenType};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Redirection {
     pub op: RedirectionOperator,
     pub file: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Command {
     pub program: String,
     pub args: Vec<String>,
@@ -23,20 +23,14 @@ impl Command {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AstNode {
-    SimpleCommand(Command),
-    BinaryOp {
-        op: ControlOperator,
-        left: Box<AstNode>,
-        right: Box<AstNode>,
-    },
-}
-
-impl AstNode {
-    pub fn new(command: Command) -> Self {
-        AstNode::SimpleCommand(command)
-    }
+    // BinaryOp {
+    //     op: ControlOperator,
+    //     left: Box<AstNode>,
+    //     right: Box<AstNode>,
+    // },
+    Commands(Vec<Command>),
 }
 
 #[derive(Debug)]
@@ -52,7 +46,23 @@ impl Parser {
             return Err(ParserError::Other("Tokens are empty".to_string()));
         }
 
-        let program = tokens.first().unwrap().to_string();
+        let command_slice =
+            tokens.split(|t| matches!(t.ty, TokenType::Operator(ControlOperator::Pipe)));
+
+        let mut commands = vec![];
+
+        for command_tokens in command_slice {
+            let command = Parser::build_command(command_tokens)?;
+            commands.push(command);
+        }
+
+        Ok(AstNode::Commands(commands))
+    }
+    fn build_command(tokens: &[Token]) -> Result<Command, ParserError> {
+        let program = tokens
+            .first()
+            .ok_or(ParserError::Other(String::from("program name is expected")))?
+            .to_string();
 
         let mut args: Vec<String> = vec![];
         let mut redirections = vec![];
@@ -75,8 +85,6 @@ impl Parser {
             }
         }
 
-        let command = Command::new(program, args, redirections);
-        let ast = AstNode::new(command);
-        Ok(ast)
+        Ok(Command::new(program, args, redirections))
     }
 }

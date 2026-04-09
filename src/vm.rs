@@ -5,7 +5,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    process::{Command as ProcessCommand, Stdio},
+    process::{Child, ChildStdout, Command as ProcessCommand, Stdio},
     str::FromStr,
 };
 
@@ -15,30 +15,66 @@ use crate::{
     parser::{AstNode, Command, Redirection},
 };
 
+pub enum PipeState {
+    ChildOutput(ChildStdout),
+    BuiltinString(String),
+}
+
 pub enum VMError {
     Exit,
     Other(String),
 }
-pub struct VM;
-impl VM {
-    pub fn execute(ast: AstNode) -> Result<(), VMError> {
-        match ast {
-            AstNode::SimpleCommand(command) => {
-                VM::execute_command(command)?;
-            }
+pub struct VM {
+    previous_state: Option<PipeState>,
+    total_executed: usize,
+    total_commands: usize,
+    ast: AstNode,
+}
 
-            AstNode::BinaryOp { op: _, left, right } => {
-                VM::execute(*left)?;
-                VM::execute(*right)?;
+impl VM {
+    pub fn new(ast: AstNode) -> Self {
+        Self {
+            previous_state: None,
+            total_executed: 0,
+            total_commands: 0,
+            ast,
+        }
+    }
+    pub fn execute(&mut self) -> Result<(), VMError> {
+        let ast = &mut self.ast.clone();
+        match ast {
+            // AstNode::SimpleCommand(command) => {
+            //     VM::execute_command(command)?;
+            // }
+
+            // AstNode::BinaryOp { op: _, left, right } => {
+            //     VM::execute(*left)?;
+            //     VM::execute(*right)?;
+            // }
+            AstNode::Commands(commands) => {
+                self.total_commands = commands.len();
+                self.total_executed = 0;
+                let mut children = vec![];
+
+                for command in commands {
+                    if let Some(child) = self.execute_command(command)? {
+                        children.push(child);
+                    }
+                    self.total_executed += 1;
+                }
+
+                for mut child in children {
+                    let _ = child.wait();
+                }
             }
         }
 
         Ok(())
     }
 
-    fn execute_command(command: Command) -> Result<(), VMError> {
+    fn execute_command(&mut self, command: &mut Command) -> Result<Option<Child>, VMError> {
         let program = command.program.as_str();
-        let mut args = command.args;
+        let args = &mut command.args;
 
         let redirection = command.redirections.first();
 
@@ -67,6 +103,8 @@ impl VM {
                             && !write_error_to_file
                         {
                             let _ = writeln!(f, "{}", output_string);
+                        } else if self.total_executed + 1 < self.total_commands {
+                            self.previous_state = Some(PipeState::BuiltinString(output_string))
                         } else {
                             println!("{output_string}");
                         }
@@ -74,7 +112,9 @@ impl VM {
                 }
                 Err(e) => {
                     if !e.is_empty() {
-                        if let Some(mut f) = file && write_error_to_file {
+                        if let Some(mut f) = file
+                            && write_error_to_file
+                        {
                             let _ = writeln!(f, "{}", e);
                         } else {
                             eprintln!("{e}");
@@ -83,16 +123,14 @@ impl VM {
                 }
             }
 
-            return Ok(());
+            return Ok(None);
         }
 
-        let external_result =
-            VM::execute_program(program, &mut args, redirection, write_error_to_file);
-        if let Err(e) = external_result {
-            eprintln!("{}", e);
-        }
+        let external_result = self
+            .execute_program(program, args, redirection, write_error_to_file)
+            .map_err(VMError::Other)?;
 
-        Ok(())
+        Ok(external_result)
     }
 
     fn is_error_redirection(redirection: &Redirection) -> bool {
@@ -117,7 +155,7 @@ impl VM {
         }
     }
 
-    fn execute_echo(args: Vec<String>) -> Result<String, String> {
+    fn execute_echo(args: &Vec<String>) -> Result<String, String> {
         let output = args
             .iter()
             .filter(|s| !s.trim().is_empty())
@@ -135,7 +173,7 @@ impl VM {
         }
     }
 
-    fn check_type_of_command(args: Vec<String>) -> Result<String, String> {
+    fn check_type_of_command(args: &Vec<String>) -> Result<String, String> {
         let first_arg = args[0].as_str();
         if KEYWORDS.contains(first_arg) {
             Ok(format!("{} is a shell builtin", first_arg))
@@ -148,17 +186,18 @@ impl VM {
         }
     }
 
-    fn change_directory(args: Vec<String>) -> Result<String, String> {
+    fn change_directory(args: &Vec<String>) -> Result<String, String> {
         if (args.first().is_none() || args[0] == "~")
             && let Ok(home_path) = env::var("HOME")
         {
-            env::set_current_dir(home_path).unwrap();
+            env::set_current_dir(home_path)
+                .map_err(|_| String::from("Can't set current directory"))?;
             return Ok(String::new());
         }
 
         let Ok(path) = PathBuf::from_str(&args[0]);
         if path.is_dir() {
-            env::set_current_dir(path).unwrap();
+            env::set_current_dir(path).map_err(|_| String::from("Can't set current directory"))?;
             Ok(String::new())
         } else {
             Ok(format!("cd: {}: No such file or directory", path.display()))
@@ -166,11 +205,12 @@ impl VM {
     }
 
     fn execute_program(
+        &mut self,
         program: &str,
         args: &mut Vec<String>,
         redirection: Option<&Redirection>,
         is_error: bool,
-    ) -> Result<String, String> {
+    ) -> Result<Option<std::process::Child>, String> {
         if !program.contains(" ") {
             check_executable_file_exists_in_paths(program)
                 .ok_or_else(|| format!("{program}: command not found"))?;
@@ -179,25 +219,58 @@ impl VM {
         let (stdout_cfg, stderr_cfg) = if let Some(rd) = redirection {
             let file_stdio = VM::get_file_for_redirection(rd)
                 .map(Stdio::from)
-                .unwrap_or_else(Stdio::inherit);
+                .unwrap_or(self.get_default_stdio());
 
             if is_error {
-                (Stdio::inherit(), file_stdio)
+                (self.get_default_stdio(), file_stdio)
             } else {
-                (file_stdio, Stdio::inherit())
+                (file_stdio, self.get_default_stdio())
             }
         } else {
-            (Stdio::inherit(), Stdio::inherit())
+            (self.get_default_stdio(), self.get_default_stdio())
         };
 
-        ProcessCommand::new(program)
+        let mut builtin_text_to_write=None;
+
+        let default_stdin = match self.previous_state.take() {
+            Some(PipeState::BuiltinString(text)) => {
+                builtin_text_to_write=Some(text);
+                Stdio::piped()
+            },
+            Some(PipeState::ChildOutput(child_stdout)) => {
+                Stdio::from(child_stdout)
+            }
+            None => Stdio::inherit(),
+        };
+
+        let mut command = ProcessCommand::new(program)
             .args(&mut args[0..])
+            .stdin(default_stdin)
             .stdout(stdout_cfg)
             .stderr(stderr_cfg)
-            .status()
+            .spawn()
             .map_err(|_| format!("{program}: command not found"))?;
 
-        Ok(String::new())
+        if let Some(text) = builtin_text_to_write {
+            if let Some(mut child_stdin) = command.stdin.take() {
+                let _ = child_stdin.write_all(text.as_bytes());
+                let _ = child_stdin.write_all(b"\n");
+            }
+        }
+
+        if let Some(stdout) = command.stdout.take() {
+            self.previous_state = Some(PipeState::ChildOutput(stdout));
+        }
+
+        Ok(Some(command))
+    }
+
+    fn get_default_stdio(&self) -> Stdio {
+        if self.total_executed + 1 == self.total_commands {
+            Stdio::inherit()
+        } else {
+            Stdio::piped()
+        }
     }
 }
 
@@ -207,8 +280,13 @@ fn check_executable_file_exists_in_paths(file: &str) -> Option<String> {
         for directory in directories {
             let path = directory.join(file);
             if path.exists() {
-                let metadata = fs::metadata(&path).unwrap();
-                if is_executable(&metadata) {
+                let metadata = fs::metadata(&path);
+
+                // We may not have permissions to access the directory, so we want to safely
+                // ignore the error
+                if let Ok(m) = metadata
+                    && is_executable(&m)
+                {
                     return path.to_str().map(|str| str.to_owned());
                 }
             }

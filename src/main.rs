@@ -12,8 +12,6 @@ use crate::{
     vm::{VM, VMError},
 };
 
-#[allow(unused_imports)]
-mod eval;
 mod keywords;
 mod lexer;
 mod parser;
@@ -35,7 +33,8 @@ impl Completer for ShellHelper {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let (start, word) = extract_word(line, pos, None, |c| c == ' ');
 
-        let matches: Vec<Pair> = self.commands
+        let matches: Vec<Pair> = self
+            .commands
             .iter()
             .filter(|cmd| cmd.starts_with(word))
             .map(|cmd| Pair {
@@ -121,8 +120,8 @@ fn main() {
         let parse_result = Parser::parse(tokens);
         match parse_result {
             Ok(ast) => {
-                let vm_result = VM::execute(ast);
-                match vm_result {
+                let mut vm = VM::new(ast);
+                match vm.execute() {
                     Err(VMError::Exit) => {
                         break;
                     }
@@ -135,5 +134,4 @@ fn main() {
             Err(e) => eprintln!("{e:?}"),
         }
     }
-    // eval::run();
 }
