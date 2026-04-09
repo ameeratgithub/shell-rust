@@ -179,7 +179,7 @@ impl VM {
             .map_err(|e| e.to_string())?
             .iter()
             .enumerate()
-            .map(|(index, item)| format!("  {}  {item}", index + 1))
+            .map(|(index, item)| format!("    {}  {item}", index + 1))
             .collect::<Vec<String>>()
             .join("\n");
 
