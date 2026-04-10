@@ -205,7 +205,7 @@ impl VM {
     ) -> Result<String, String> {
         let raw_lines = if let Some(p) = file_path.clone() {
             if action == HistoryFileAction::Read {
-                read_history_from_file(p, file_path.is_none())?
+                read_history_from_file(p)?
             } else {
                 let lines = read_history_from_memory();
 
@@ -230,7 +230,14 @@ impl VM {
                 lines
             }
         } else {
-            read_history_from_memory()
+            if let Ok(file_path) = env::var("HISTFILE") {
+                let mut file_content = read_history_from_file(file_path)?;
+                let mut memory_content = read_history_from_memory();
+                file_content.append(&mut memory_content);
+                file_content
+            } else {
+                read_history_from_memory()
+            }
         };
 
         if let Some(file_name) = file_path {
@@ -397,14 +404,11 @@ fn write_history_to_file(path: String, data: Vec<String>) -> Result<(), String> 
     Ok(())
 }
 
-fn read_history_from_file(path: String, skip_first_line: bool) -> Result<Vec<String>, String> {
+fn read_history_from_file(path: String) -> Result<Vec<String>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
 
-    let mut lines_iter = reader.lines();
-    // if skip_first_line {
-    //     let _ = lines_iter.next();
-    // }
+    let lines_iter = reader.lines();
 
     let result = lines_iter
         .collect::<Result<Vec<String>, _>>()
