@@ -2,7 +2,7 @@ use std::{
     env,
     fs::{self, OpenOptions},
     path::PathBuf,
-    sync::{LazyLock, Mutex, OnceLock},
+    sync::{LazyLock, Mutex, OnceLock, atomic::AtomicUsize},
 };
 
 use rustyline::{
@@ -22,6 +22,8 @@ mod keywords;
 mod lexer;
 mod parser;
 mod vm;
+
+static HISTORY_WRITTEN_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Helper, Highlighter, Hinter, Validator)]
 struct ShellHelper {

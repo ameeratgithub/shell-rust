@@ -7,10 +7,11 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStdout, Command as ProcessCommand, Stdio},
     str::FromStr,
+    sync::atomic::Ordering,
 };
 
 use crate::{
-    RL_EDITOR,
+    HISTORY_WRITTEN_COUNT, RL_EDITOR,
     keywords::KEYWORDS,
     lexer::RedirectionOperator,
     parser::{AstNode, Command, Redirection},
@@ -208,8 +209,21 @@ impl VM {
             } else {
                 let lines = read_history_from_memory();
 
-                if action == HistoryFileAction::Write || action == HistoryFileAction::Append {
-                    write_history_to_file(p, lines.clone(), action == HistoryFileAction::Append)?;
+                if action == HistoryFileAction::Write {
+                    write_history_to_file(p, lines.clone())?;
+                    return Ok(String::new());
+                } else if action == HistoryFileAction::Append {
+                    let lines = read_history_from_memory();
+                    let written_so_far = HISTORY_WRITTEN_COUNT.load(Ordering::Relaxed);
+
+                    if written_so_far < lines.len() {
+                        let new_lines = lines[written_so_far..].to_vec();
+
+                        write_history_to_file(p, new_lines)?;
+
+                        HISTORY_WRITTEN_COUNT.store(lines.len(), Ordering::Relaxed);
+                    }
+
                     return Ok(String::new());
                 }
 
@@ -365,10 +379,10 @@ fn read_history_from_memory() -> Vec<String> {
         .collect()
 }
 
-fn write_history_to_file(path: String, data: Vec<String>, append: bool) -> Result<(), String> {
+fn write_history_to_file(path: String, data: Vec<String>) -> Result<(), String> {
     let file = OpenOptions::new()
         .create(true)
-        .append(append)
+        .append(true)
         .open(path)
         .map_err(|e| e.to_string())?;
 
