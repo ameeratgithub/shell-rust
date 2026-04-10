@@ -99,7 +99,11 @@ impl VM {
         if KEYWORDS.contains(program) {
             let output_result = match program {
                 "echo" => VM::execute_echo(args),
-                "exit" => return Err(VMError::Exit),
+                "exit" => {
+                    let _ =
+                        VM::get_history(None, env::var("HISTFILE").ok(), HistoryFileAction::Append);
+                    return Err(VMError::Exit);
+                }
                 "history" => VM::execute_history(args),
                 "pwd" => VM::print_working_directory(),
                 "cd" => VM::change_directory(args),
