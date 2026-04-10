@@ -402,9 +402,9 @@ fn read_history_from_file(path: String, skip_first_line: bool) -> Result<Vec<Str
     let reader = BufReader::new(file);
 
     let mut lines_iter = reader.lines();
-    if skip_first_line {
-        let _ = lines_iter.next();
-    }
+    // if skip_first_line {
+    //     let _ = lines_iter.next();
+    // }
 
     let result = lines_iter
         .collect::<Result<Vec<String>, _>>()
